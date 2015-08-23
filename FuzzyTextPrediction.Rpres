@@ -1,0 +1,136 @@
+<style>
+.reveal small {font-size: 0.5em}
+.reveal p, .reveal ul {margin-bottom: 3px}
+</style>
+
+Fuzzy Text Prediction
+========================================================
+author: William Murphy
+date: 8/23/2015
+
+&nbsp;
+
+&nbsp;
+
+![app screenshot](app-image.png)
+[https://wmurphyrd.shinyapps.io/FuzzyTextPredictor](https://wmurphyrd.shinyapps.io/FuzzyTextPredictor)
+
+
+***
+
+&nbsp;
+
+To use the app:
+
+1. Enter your text into the textbox
+2. Click the "Predct next word" button
+3. View your predicted word in the grey area
+4. Click "Show details" for prediction internals and more
+
+What is Fuzzy Smoothing?
+========================================================
+
+&nbsp;
+
+- Smoothing accounts for unknown words & phrases
+- Fuzzy smoothing skips over words to find similar phrases
+- Unlike discounting-based smoothing, doesn't treat all skipped words as similar & rare
+
+***
+
+&nbsp;
+
+Example
+
+```{r, echo = FALSE, message = FALSE, warn = FALSE}
+library(slam); library(fastmatch); library(magrittr); library(plot3D)
+load("PresendationObjects.RData")
+dict <- createDictionary(frequenciesUnigram)
+```
+- Probability of "and ralph was": 
+```{r, echo = FALSE}
+markovArray3d[dict$wt("and"), dict$wt("ralph"), dict$wt("was")]$v
+```
+- Probability of "and _____ was": 
+```{r, echo = FALSE}
+
+t <- myExtract(markovArray3d, c(dict$wt("and"), NA, dict$wt("was")))
+apply(t$i, 2, dict$wti) %>% apply(1, paste, collapse = " ") %>% 
+  data.frame(`Fuzzed Phrase` = ., `Log Probability` = round(t$v, 2), check.names = F) %>% head(3) %>% kable
+
+```
+
+How Fuzzy Smoothing Works
+========================================================
+
+- Markov probabilties are stored in a multi-dimensional array
+- The probability of any n-gram can be accessed via 
+
+<small>$$ markovArray[word_1, word_2, ..., word_n] $$</small>
+
+- Omit the last dimension to access a vector of prediction probabilites for the next word (Fig. 1)
+- Omit two dimensions to access a plane of fuzzy-smoothed probabilities (Fig. 2)
+- Aggregate plane into vector for prediction probabilities for the next word
+
+***
+
+```{r echo=FALSE, fig.height = 3, fig.width = 4}
+wordSubset <- c(2:5, 20)
+names(wordSubset) <- dict$wti(wordSubset)
+sub <- markovArray3d[wordSubset, wordSubset, wordSubset]
+
+r1 <- paste(c(names(wordSubset)[c(2,3)], "\\_\\_\\_\\_"), collapse= " ")
+p1 <- paste(names(wordSubset)[sub$i[sub$i[ , 1]==2 & sub$i[ , 2] ==3, 3]], 
+            collapse = "\" and \"")
+
+par(mai = c(0,0,0,0))
+border3D(x0 = 2, x1 = 2, y0 = 3, y1 = 3, z0 = 0, z1=5, 
+         xlim = c(1,6), ylim = c(1,5), zlim = c(1,5), 
+         col = "green", xlab = NA, ylab = NA, zlab = NA,
+         ticktype = "detailed", cex.axis = 1e-9, fin = c(3,3))
+text3D(sub$i[ ,1], sub$i[, 2], sub$i[, 3], labels = as.character(round(sub$v,0)),
+       colvar = sub$i[ , 1]==2 & sub$i[ , 2] ==3, 
+       xlim = c(1,5), ylim = c(1,5), zlim = c(1,5),
+       add=TRUE, colkey = F)
+text3D(x = c(1:5, rep(6,5), rep(0,5)), 
+       y = c(rep(.25, 5), 2:6, seq(.5,.75,length.out=5)), 
+       z = c(rep(1, 5), rep(-0.5, 5), seq(1.2,5,length.out=5)), 
+       labels = rep(names(wordSubset), 3), add = TRUE)
+
+```
+<small>Fig 1. 3-gram log probabilities in vector space. A lookup of "`r r1`" accesses a vector (green) and intersects "`r p1`" (red)</small>
+```{r echo=FALSE, fig.height = 3, fig.width = 4}
+
+r2 <- paste(c(names(wordSubset)[2], rep("\\_\\_\\_\\_",2)), collapse = " ")
+p2 <- sub$i[sub$i[, 1]==2, c(2,3)]
+p2 <- apply(p2, 1, function(x)paste(names(wordSubset[x]), collapse = " "))
+p2 <- paste(paste(p2[seq_len(length(p2)-1)], collapse = "\", \""), "\", and \"",
+            p2[length(p2)], collapse = "")
+
+par(mai = c(0,0,0,0))
+border3D(x0 = 2, x1 = 2, y0 = 1, y1 = 5, z0 = 1, z1=5, xlim = c(1,6), ylim = c(1,5), zlim = c(1,5), col = "green", xlab = NA, ylab = NA, zlab = NA,
+       ticktype = "detailed", cex.axis = 1e-9)
+text3D(sub$i[ ,1], sub$i[, 2], sub$i[, 3], labels = as.character(round(sub$v,0)),
+       colvar = sub$i[ , 1]==2, xlim = c(1,5), ylim = c(1,5), zlim = c(1,5),
+       add=TRUE, colkey = F)
+text3D(x = c(1:5, rep(6,5), rep(0,5)), 
+       y = c(rep(.25, 5), 2:6, seq(.5,.75,length.out=5)), 
+       z = c(rep(1, 5), rep(-0.5, 5), seq(1.2,5,length.out=5)), 
+       labels = rep(names(wordSubset), 3), add = TRUE)
+
+
+```
+<small>Fig 2. A lookup of "`r r2`" accesses a plane (outlined in green) and intersects "`r p2`" (red)</small>
+
+Optimizations
+========================================================
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
+
+Performance
+====================================================
+
+hello

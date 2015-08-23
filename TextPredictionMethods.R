@@ -1,4 +1,4 @@
-library(dplyr); library(magrittr); library(tm); library(RWeka); library(slam); library(fastmatch)
+library(plyr); library(dplyr); library(magrittr); library(tm); library(RWeka); library(slam); library(fastmatch)
 #load("bigmark.RData")
 #load("bigwords.RData")
 prepText <- function(corp, profanity) {
@@ -16,10 +16,25 @@ prepText <- function(corp, profanity) {
     tm_map(stripWhitespace) 
 }
 
+prepTextClearPunct <- function(corp, profanity) {
+  corp %<>% tm_map(removeNumbers) %>%
+    #remove unicode / emoji
+    tm_map(content_transformer(function(x)gsub("[^[:graph:][:space:]]", "", x))) %>%
+    #separate words run together by periods
+    #remove punctuation 
+    tm_map(removePunctuation,  preserve_intra_word_dashes = TRUE) %>% 
+    tm_map(content_transformer(tolower)) %>%  
+    tm_map(removeWords, words=profanity) %>%
+    #remove contracted or hyphenated fragments remaining from removed profanity
+    tm_map(content_transformer(
+      function(x)gsub("(^[[:punct:]]|\\B[[:punct:]])[[:alpha:]]+", "", x))) %>%
+    tm_map(stripWhitespace) 
+}
+
 myTokenizer <- function(x, max, min=NA, tokensOnly = FALSE) {
   if(is.na(min)) min <- max
   ngtok <- function(y) NGramTokenizer(
-    y, Weka_control(max=max, min=min, delimiters=" \r\n\t\\/_"))
+    y, Weka_control(max=max, min=min, delimiters=" \r\n\t.,;:\"()?!"))
   if(tokensOnly) return(ngtok(as.character(x[[1]])))
   TermDocumentMatrix(
     x, control = list(
@@ -30,87 +45,25 @@ myTokenizer <- function(x, max, min=NA, tokensOnly = FALSE) {
   )
 }
 
-fuzzyModel <- function(markovArray, dict, profanity, myTokenizer, prepText) {
 
-  getProb <- function(ngram, predict = FALSE, top = FALSE) {
-    #search <- seq(1,dim(markovArray)[1])
-    ngram <- as.list(ngram)
-    if(predict) {
-      #ngram <- c(ngram, list(search))
-      ngram <- c(ngram, NA)
-      pdim <- length(ngram)
-    } else pdim <- NA
-    #if any words are unknown, pull all possible words in their place
-    ngram <- lapply(ngram, function(x) if(any(is.na(x)))alist(,)[[1]] else x)
-    fill <- length(dim(markovArray)) - length(ngram)
-    if(fill > 0) ngram <- c(ngram, as.list(rep(1, fill)))
-    pred <- do.call(`[`, c(alist(markovArray),ngram))
-    #collapse multi-dimensional arrays resulting from unknown word searches
-    #by taking geometric mean (formely added their log proababilities,
-    # but this seemd to over penalize)
-    if(!length(pred$v)) return(NA)
-    pred %<>% rollup(MARGIN = setdiff(seq_along(dim(pred)), pdim), FUN = mean) %>%
-      drop_simple_sparse_array
-    
-    if(!predict) return(pred)
-    
-    r <- data.frame(word=pred$i[,1], prob=pred$v)
-    #index one is a placeholder and the retrieved value is actually 
-    #probability fo the root ngram due to the matrix structure
-    #discard it because it's not relevant
-    r <- r[r$word != 1,]
-    
-    if(top) {
-      # sorting may be unnecessary as the matrix was built in descending 
-      # probability order and slam appears to return in the same order
-      r <- arrange(r, desc(prob))[top,]
-      rv <- r$prob
-      names(rv) <- r$word
-      return(rv)
-    }
-    
-    r
-  }
-  
-  
-  codeNgram <- function(text) {
-    prepText(VCorpus(VectorSource(text)), profanity) %>% 
-      myTokenizer(1, tokensOnly = TRUE) ->
-      toks
-    #discard words beyond the current ngram limit
-    if(length(toks) > MAX_NGRAM - 1) toks <- 
-        toks[seq(length(toks) - (MAX_NGRAM - 2), length(toks))]
-    dict$wt(toks)
-  }
-  
-  predictFuzzy <- function(text, smooth = .4) {
-    ngram <- codeNgram(text)
-    if(length(ngram) < MAX_NGRAM - 1) 
-      ngram <- c(rep(NA, MAX_NGRAM - length(ngram) - 1), ngram)
-    pred <- getProb(ngram, predict = TRUE, top = 1)
-    preds <- data.frame(
-      root=paste(dict$wti(ngram), collapse = " "), 
-      pred=ifelse(is.null(dict$wti(names(pred))), NA, dict$wti(names(pred))), 
-      prob=pred, stringsAsFactors=F)
-    if(all(is.na(ngram))) return(preds)
-    for(i in seq_len(sum(!is.na(ngram)) - 1)) {
-      ngram[which.max(ngram)] <- NA
-      pred <- getProb(ngram, predict = TRUE, top = 1)
-      preds <- rbind(preds, data.frame(
-        root=paste(dict$wti(ngram), collapse = " "), 
-        pred=ifelse(is.null(dict$wti(names(pred))), NA, dict$wti(names(pred))), 
-        prob=pred + log(smooth)*i, stringsAsFactors=F))
-    }
-    arrange(preds, desc(prob))
-  }
-  return(predictFuzzy)  
+
+#optimized version of [.simple_sparse_array
+myExtract <- function(m, is) {
+  if(all(is.na(is)))return(m)
+  mapply(function(a,b) {
+    if(is.null(a) || is.na(a)) return(NULL)
+    if(a < 0) t <- which(m$i[ , b] != -1*a) else
+      t <- which(m$i[ , b] == a)
+    if(!length(t)) return(NA)
+    t}, a=is, b=seq_along(is), SIMPLIFY=FALSE) %>% 
+    extract(!sapply(., is.null)) %>% Reduce(base::intersect, .) ->
+    rows
+  if(!length(rows) || is.na(rows)[1])return(simple_sparse_zero_array(rep(1, length(is))))
+  simple_sparse_array(i = m$i[rows, , drop=FALSE], v = m$v[rows, drop=FALSE])
 }
 
 
-
-
 createDictionary <- function(freq, thresh = .9) {
-  library(fastmatch)
   #creates a dictionary so that various character vectors can be converted 
   #into the same factor-like integer representation 
   #returns a data.frame with the token text as row names for easy lookup
@@ -128,7 +81,7 @@ createDictionary <- function(freq, thresh = .9) {
 }
 
 
-markovMatrix <- function(freqs, dict, singleton_limit = 5) {
+markovMatrix <- function(freqs, dict, singleton_limit = 5, probCalc = "total") {
   library(slam)
   nWords <- dict$n
   nDim <- length(strsplit(names(freqs[[length(freqs)]][1]), " ")[[1]])
@@ -136,6 +89,9 @@ markovMatrix <- function(freqs, dict, singleton_limit = 5) {
                               dim = rep(nWords, nDim))
   wt <- dict$wt
   addDim <- function(f) {
+    #check for singleton clearance
+    t <- strsplit(names(f)[1], split = " ", fixed = TRUE)[[1]]
+    if(length(t) > singleton_limit) f <- f[f > 1]
     #convert each word position in the n-gram to a column in a data frame
     w <- strsplit(names(f), split = " ", fixed = TRUE)
     w %<>% do.call(rbind, .) %>% as.data.frame(stringsAsFactors = FALSE) 
@@ -144,19 +100,24 @@ markovMatrix <- function(freqs, dict, singleton_limit = 5) {
     #replace words with their dictionary keys and drop rows with OOV words
     w %<>% mutate_each(funs(wt), -f) %>% 
       subset(., complete.cases(.))
-    #convert the frequency count into log markov probability, bind to 
-    #the n-gram data frame to simiplify subsetting
-    if(lastWord == "V1" || length(freqs)==1) w$f <- log(w$f/sum(w$f)) else 
-      w %<>% group_by_(.dots=as.list(setdiff(names(.), c(lastWord, "f")))) %>%
-        mutate(f = log(f/sum(f)))
-    #singletons with prob == 1 would be lost in sparse array because zero values
-    #are treated as empty, so give them a near zero value limit higher order
-    #singletons; they are less valuable as all of their information is usually
-    #captured by the lower order ngrams
-    if(ncol(w) - 1 <= singleton_limit) f <- ifelse(w$f == 0, -0.0001, w$f) else {
-      w %<>% filter(f != 0)
-      f <- w$f
+    #convert the frequency count into log markov probability
+    if(probCalc == "ngram") {
+      if(lastWord == "V1") w %<>% mutate(f = log(f) - log(sum(f))) else {
+        gvars <- as.list(setdiff(names(w), c(lastWord, "f")))
+        w %<>% group_by_(.dots=gvars) %>%
+          mutate(f = log(f) - log(sum(f)))
+        #prevProbs <- apply(as.matrix(select_(w, .dots = gvars)), 
+        #                   1, function(x) {myExtract(mmat, x)$v})
+        prevProbs <- mmat[
+          as.matrix(select_(w, .dots = gvars)) %>%
+            cbind(matrix(1, ncol = length(dim(mmat)) - ncol(.), nrow = nrow(.)))]
+        #w %<>% mutate(f = f + prevProbs)
+        w$f <- w$f + prevProbs
+      }
+    } else {
+      w %<>% mutate(f = log(f/sum(f)))
     }
+    f <- w$f
     #pad with 1's for any additional dimensions in the array
     w %<>% select(-f) %>% as.matrix %>%
       cbind(matrix(1, ncol = length(dim(mmat)) - ncol(.), nrow = nrow(.)))
@@ -167,18 +128,30 @@ markovMatrix <- function(freqs, dict, singleton_limit = 5) {
   mmat
 }
 
+splitMarkovArrays <- function(markovArray) {
+  dims <- length(dim(markovArray))
+  lapply(seq(1, dims), function(n){
+    i <- as.list(c(rep(-1, n), rep(1, dims - n)))
+    myExtract(markovArray, i) %>% drop_simple_sparse_array
+  })
+}
 
-rateModel <- function(tests, mod, samp=10, smooth=.4, seed=NA) {
+
+rateModel <- function(tests, mod, samp=10, fuzzSmooth=.003, perpSmooth = 2, 
+                      seed=NA, noisy = F) {
+  if(!is.na(seed))set.seed(seed)
   runTest <- function(test, samp) {
-    if(!is.na(seed))set.seed(seed)
     samp <- sample(test, samp)
     src <- sub(" [[:graph:]]+$", "", names(samp))
     answer <- sub("^.* ", "", names(samp))
     result <- mapply(function(x, y){
-      p <- mod(x, smooth)
+      p <- mod(x, fuzzSmooth, perpSmooth)
+      if(noisy){print(mutate(p, ans=y))}
       if(p[1, "pred"] == y && grepl("NA", p[1, "root"])) return(3)
       if(p[1, "pred"] == y) return(2)
-      if(any(na.omit(p[ , "pred"]) == y)) return(1)
+      if(any(na.omit(p[ , "pred"]) == y)) {
+        return(1)
+      }
       0
     }, x = src, y = answer)
     c(match = sum(result > 1) / length(result), 
@@ -186,4 +159,52 @@ rateModel <- function(tests, mod, samp=10, smooth=.4, seed=NA) {
       fuzz = sum(result > 2) / length(result))
   }
   lapply(tests, runTest, samp=samp)
+}
+
+optModel <- function(param, smoother = c("perp", "fuzz"), 
+                     tests, model, samp = 50, seed = 897) {
+  smoother = match.arg(smoother)
+  if(smoother == "perp") t <- 
+      rateModel(tests, model, perpSmooth = param, samp = samp, seed = seed) else
+        t <- rateModel(tests, model, fuzzSmooth = 10^param, samp = samp, seed = seed)
+  sum(sapply(t, function(x)x[1]))
+}
+
+removeUselessProbs <- function(markovArray, contProbs) {
+  m <- cbind(as.data.frame(markovArray$i), prob = markovArray$v)
+  markdim <- length(dim(markovArray))
+  lastword <- names(m)[length(names(m)) - 1]
+  gvars <- setdiff(names(m), c(lastword, "prob")) #names(m)[(-1:0 + length(names(m)))*-1]
+  #too many ties for simple ranking to be valuable
+  #m %<>% group_by_(.dots = gvars) %>% top_n(1, desc(prob))
+  m <- ddply(m, gvars, function(g){
+    g %<>% filter(prob == max(prob))
+    if(nrow(g) > 1) {
+      #break ties with total continuation count ties within c.count are broken
+      #by unigram prob by presorting by word code (since codes were assinged in
+      #decreasing unigram prob order)
+      g %<>% arrange_(.dots = lastword) %>% as.data.frame
+      o <- order(contProbs[g[ , lastword], markdim], decreasing = TRUE)
+      g <- g[o[1], ] 
+    }
+    g
+  })
+  simple_sparse_array(as.matrix(select(m, -prob)), m$prob)
+}
+
+continuationProbabilityMatrix <- function(markovArrays) {
+  pContinuation <- function(markovArray) {
+    level = length(dim(markovArray))
+    markovArray$i %>% as.data.frame %>% group_by_(.dots=names(.)[level]) %>%
+      summarise(n = n()) %>% arrange_(.dots=(names(.)[1])) %>% as.data.frame %>%
+      extract( , 2) %>% log %>% subtract(log(length(markovArray$v))) %>% c(0, .)
+  }
+  lapply(markovArrays, pContinuation) %>% unlist %>%
+    matrix(ncol = length(markovArrays), byrow = FALSE)
+}
+
+trimMarkovArray <- function(markovArray, quant) {
+  q <- quantile(markovArray$v, probs = quant)
+  d <- markovArray$v < q
+  simple_sparse_array(markovArray$i[!d, ], markovArray$v[!d])
 }

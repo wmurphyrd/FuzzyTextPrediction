@@ -1,0 +1,8 @@
+.center-children, #time, #size, h2 {text-align: center}
+.widen>div.shiny-input-container {width: 100%}
+div#prediction {margin-top: 10px; font-size: x-large; font-weight: bold; min-height: 30px;}
+#details table {margin: 10px auto;}
+.shiny-plot-output img {border-radius: 4px; margin-bottom: 15px;}
+button.btn {margin-top: 10px; margin-bottom: 10px;}
+div.well {max-width: 300px; margin: 10px auto;}
+p {text-align: justify;}
