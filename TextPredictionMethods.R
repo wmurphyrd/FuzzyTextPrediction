@@ -1,6 +1,5 @@
 library(plyr); library(dplyr); library(magrittr); library(tm); library(RWeka); library(slam); library(fastmatch)
-#load("bigmark.RData")
-#load("bigwords.RData")
+
 prepText <- function(corp, profanity) {
   corp %<>% tm_map(removeNumbers) %>%
     #remove unicode / emoji
@@ -80,7 +79,8 @@ createDictionary <- function(freq, thresh = .9) {
   list(words=words, wti=wti, wt=wt, n=length(words))
 }
 
-
+#build a vector space projection of MAX_NGRAM dimensions and calculcate
+#probabilities for all knonw word combindations
 markovMatrix <- function(freqs, dict, singleton_limit = 5, probCalc = "total") {
   library(slam)
   nWords <- dict$n
@@ -128,6 +128,7 @@ markovMatrix <- function(freqs, dict, singleton_limit = 5, probCalc = "total") {
   mmat
 }
 
+#speed access by breaking up markov array for lower order backoff predictions
 splitMarkovArrays <- function(markovArray) {
   dims <- length(dim(markovArray))
   lapply(seq(1, dims), function(n){
@@ -137,7 +138,7 @@ splitMarkovArrays <- function(markovArray) {
 }
 
 
-rateModel <- function(tests, mod, samp=10, fuzzSmooth=.003, perpSmooth = 2, 
+rateModel <- function(tests, mod, samp=10, fuzzSmooth=0.3545422, perpSmooth = 1.465925, 
                       seed=NA, noisy = F) {
   if(!is.na(seed))set.seed(seed)
   runTest <- function(test, samp) {
@@ -207,4 +208,8 @@ trimMarkovArray <- function(markovArray, quant) {
   q <- quantile(markovArray$v, probs = quant)
   d <- markovArray$v < q
   simple_sparse_array(markovArray$i[!d, ], markovArray$v[!d])
+}
+
+getTime <- function(model, test, n = 5) {
+  summary(system.time(sapply(sample(names(test), n), model$predict)))[3] / n
 }

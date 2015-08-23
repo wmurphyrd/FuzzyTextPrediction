@@ -1,6 +1,7 @@
 <style>
 .reveal small {font-size: 0.5em}
 .reveal p, .reveal ul {margin-bottom: 3px}
+div.slideContent.smallish {font-size: .8em}
 </style>
 
 Fuzzy Text Prediction
@@ -13,6 +14,9 @@ date: 8/23/2015
 &nbsp;
 
 ![app screenshot](app-image.png)
+
+&nbsp;
+
 [https://wmurphyrd.shinyapps.io/FuzzyTextPredictor](https://wmurphyrd.shinyapps.io/FuzzyTextPredictor)
 
 
@@ -43,7 +47,8 @@ What is Fuzzy Smoothing?
 Example
 
 ```{r, echo = FALSE, message = FALSE, warn = FALSE}
-library(slam); library(fastmatch); library(magrittr); library(plot3D)
+library(slam); library(fastmatch); library(magrittr); library(plot3D);
+library(plyr); library(dplyr); library(tm); library(RWeka); 
 load("PresendationObjects.RData")
 dict <- createDictionary(frequenciesUnigram)
 ```
@@ -64,13 +69,10 @@ How Fuzzy Smoothing Works
 ========================================================
 
 - Markov probabilties are stored in a multi-dimensional array
-- The probability of any n-gram can be accessed via 
-
-<small>$$ markovArray[word_1, word_2, ..., word_n] $$</small>
-
-- Omit the last dimension to access a vector of prediction probabilites for the next word (Fig. 1)
-- Omit two dimensions to access a plane of fuzzy-smoothed probabilities (Fig. 2)
-- Aggregate plane into vector for prediction probabilities for the next word
+- The probability of any n-gram can be accessed via <small>$$ markovArray[word_1, word_2, ..., word_n] $$</small>
+- Omit last dimension for vector of next word probabilites (Fig. 1)
+- Omit two dimensions for plane of fuzzy-smoothed probabilities (Fig. 2)
+- Aggregate into vector for next word prediction
 
 ***
 
@@ -124,13 +126,27 @@ text3D(x = c(1:5, rep(6,5), rep(0,5)),
 
 Optimizations
 ========================================================
+class:smallish
 
 ```{r, echo=FALSE}
-plot(cars)
+kable(optims)
 ```
-
 
 Performance
 ====================================================
 
-hello
+The optimise method was used to find ideal values for two tuning parameters, penalties for fuzzed words and lower-order backoff predictions, using test set of data not used in model creation
+
+```{r, echo = FALSE}
+model <- multiCon$constructModel()
+```
+
+```{r, eval = FALSE}
+optimise(optModel, c(-5, 2), smoother = "fuzz", tests=testFreqs[4], model=multi$predict, samp=25, seed=5555, tol = .5, maximum = TRUE)
+```
+
+Final predicted accuracy using a third, validation data set:
+
+```{r}
+rateModel(list(validationData), model$predict, samp = 100, fuzzSmooth = 0.3545422, perpSmooth = 1.465925)
+```

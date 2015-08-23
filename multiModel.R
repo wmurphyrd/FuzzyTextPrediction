@@ -7,7 +7,7 @@ multiModel <- function(markovArrays, continuationProbs, dict,
   #if words in the ngram are missing, find ngram
   #probabilities for ngrams with any word in those spots
   #then collapse any with identical words in the remaining spots by
-  #adding their probabilities
+  #geometric mean
   getProb <- function(ngram, predict = FALSE, top = FALSE) {
     if(predict) {
       ngram <- c(ngram, NA)
@@ -18,7 +18,7 @@ multiModel <- function(markovArrays, continuationProbs, dict,
     if(!length(pred$v)) return(NA)
     
     pred %<>% rollup(MARGIN = setdiff(seq_along(dim(pred)), pdim), 
-                     FUN = function(x) log(sum(exp(x)))) %>%
+                     FUN = mean) %>%
       drop_simple_sparse_array
     
     if(!predict) return(pred)
@@ -70,7 +70,7 @@ multiModel <- function(markovArrays, continuationProbs, dict,
     #ngram * -1 
   }
   
-  predictMulti <- function(text, fuzzSmooth = .001, perpSmooth = 2) {
+  predictMulti <- function(text, fuzzSmooth = 0.3545422, perpSmooth = 1.465925) {
     ngram <- codeNgram(text)
     preds <- data.frame()
     while(length(ngram) > 0) {
