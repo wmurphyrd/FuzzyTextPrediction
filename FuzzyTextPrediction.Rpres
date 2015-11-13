@@ -15,9 +15,9 @@ date: 8/23/2015
 
 ![app screenshot](app-image.png)
 
-&nbsp;
+[https://wmurphyrd.shinyapps.io](https://wmurphyrd.shinyapps.io/FuzzyTextPredictor)
 
-[https://wmurphyrd.shinyapps.io/FuzzyTextPredictor](https://wmurphyrd.shinyapps.io/FuzzyTextPredictor)
+[/FuzzyTextPredictor](https://wmurphyrd.shinyapps.io/FuzzyTextPredictor)
 
 
 ***
@@ -148,5 +148,5 @@ optimise(optModel, c(-5, 2), smoother = "fuzz", tests=testFreqs[4], model=multi$
 Final predicted accuracy using a third, validation data set:
 
 ```{r}
-rateModel(list(validationData), model$predict, samp = 100, fuzzSmooth = 0.3545422, perpSmooth = 1.465925)
+rateModel(list(validationData), model$predict, samp = 100, fuzzSmooth = 0.3545422, perpSmooth = 1.465925)[[1]]
 ```

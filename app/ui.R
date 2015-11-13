@@ -29,7 +29,9 @@ shinyUI(fluidPage(
                "of the last words in the input and compares normalized",
                " scores to find the most likely next word. If a phrase is ",
                "not recognized, the model can skip over (fuzz) words ",
-               " to find similar phrases instead."),
+               " to find similar phrases instead.",
+               a("View a presentation on RPubs to Learn more", 
+                       href="http://rpubs.com/wmurphyrd/fuzzytext")),
              tableOutput("details"),
              div(
               fluidRow(span("Prediction Time:"), textOutput("time", inline=T)),
@@ -47,6 +49,8 @@ shinyUI(fluidPage(
            fluidRow(
              column(12,
                     div(div(actionButton("refreshClouds", "Update Word Clouds")),
+                       a("View source on GitHub", 
+                               href="https://github.com/wmurphyrd/FuzzyTextPrediction"),
                         class = "center-children")))
            ),
            offset = 3)
