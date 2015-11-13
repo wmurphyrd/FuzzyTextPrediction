@@ -16,8 +16,10 @@ The [report linked here](http://rpubs.com/wmurphyrd/97195) describes the procese
 In the implementation phase, the proposed model was developed and deployed as a Web application. The following steps were completed in this phase:
 
 * The development of a novel smoothing algorithm using a multi-dimensional vector space projection to represent the Markov probabilities of all possible phrases
+
 ![Accessing a plane of probabilities to smooth over an unkown combination of words](fuzzytextprediction-figure/f-2.png)
-Figure 2 from "How Fuzzy Smoothing Works" in the [presentation](http://rpubs.com/wmurphyrd/fuzzytext). 
+
+Figure 2 from "How Fuzzy Smoothing Works" in [this presentation](http://rpubs.com/wmurphyrd/fuzzytext). 
 * Speed and memory use optimizations to fit the target hardware (mobile devices)
 * Evaluation of model performance
 * Creation and deployment of Web application with user interface
